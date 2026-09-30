@@ -1,0 +1,71 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish Windows application
+        run: |
+          dotnet publish PressureTestCalculator.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o publish
+
+      - name: Create installer
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path installer
+
+          Copy-Item "publish\PressureTestCalculator.exe" `
+            "installer\PressureTestCalculator.exe"
+
+          @"
+          [Setup]
+          AppName=Pressure Test Calculator
+          AppVersion=1.0.0
+          DefaultDirName={autopf}\Pressure Test Calculator
+          DefaultGroupName=Pressure Test Calculator
+          OutputDir=.
+          OutputBaseFilename=PressureTestCalculatorSetup
+          ArchitecturesInstallIn64BitMode=x64
+          Compression=lzma
+          SolidCompression=yes
+
+          [Files]
+          Source: "installer\PressureTestCalculator.exe"; DestDir: "{app}"
+
+          [Icons]
+          Name: "{autodesktop}\Pressure Test Calculator"; Filename: "{app}\PressureTestCalculator.exe"
+          Name: "{group}\Pressure Test Calculator"; Filename: "{app}\PressureTestCalculator.exe"
+
+          [Run]
+          Filename: "{app}\PressureTestCalculator.exe"; Description: "Launch Pressure Test Calculator"; Flags: nowait postinstall skipifsilent
+          "@ | Out-File installer.iss -Encoding UTF8
+
+          choco install innosetup --yes --no-progress
+
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: PressureTestCalculator-Windows-Installer
+          path: PressureTestCalculatorSetup.exe
